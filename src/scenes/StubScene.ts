@@ -3,7 +3,7 @@
 
 import { Scene, RenderContext } from '../engine/types';
 import { GameEngine } from '../engine/GameEngine';
-import { dist, clamp } from '../engine/utils';
+import { dist, drawGlow } from '../engine/utils';
 
 export class StubScene implements Scene {
   private engine: GameEngine;
@@ -19,18 +19,26 @@ export class StubScene implements Scene {
     this.label = label;
   }
 
+  layout(): void {
+    this.exitButton = { x: Math.max(44, this.engine.getWidth() * 0.05), y: Math.max(46, this.engine.getHeight() * 0.075), r: 28 };
+  }
+
   enter(): void {
-    this.exitButton = { x: this.engine.getWidth() * 0.05, y: this.engine.getHeight() * 0.08, r: 25 };
+    this.layout();
     if (!this.ambientSpawned) {
       this.engine.getParticles().spawnFireflies(15, this.engine.getWidth(), this.engine.getHeight());
       this.ambientSpawned = true;
     }
 
-    this.engine.showStoryboard([
-      { text: `${this.label}...`, duration: 2.5 },
-      { text: 'This room is still sparkling to life.', duration: 3 },
-      { text: 'Come back soon to explore!', duration: 2.5 },
-    ], () => {});
+    // Full narration only the first time we peek in
+    const state = this.engine.getState();
+    if (!state.hasVisited(this.sceneName)) {
+      state.markVisited(this.sceneName);
+      this.engine.showStoryboard([
+        { text: `${this.label}...`, duration: 2.5 },
+        { text: 'This room is still sparkling to life. Come back soon to explore!', duration: 3 },
+      ], () => {});
+    }
   }
 
   exit(): void {
@@ -69,18 +77,8 @@ export class StubScene implements Scene {
     ctx.fillStyle = 'rgba(15, 8, 25, 0.5)';
     ctx.fillRect(0, 0, width, height);
     const pulse = 0.3 + Math.sin(this.time * 0.5) * 0.2;
-    ctx.save();
-    ctx.fillStyle = `rgba(180, 150, 255, ${pulse * 0.1})`;
-    ctx.filter = 'blur(60px)';
-    ctx.beginPath();
-    ctx.arc(width * 0.5, height * 0.5, 150, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = `rgba(255, 200, 150, ${pulse * 0.05})`;
-    ctx.beginPath();
-    ctx.arc(width * 0.3, height * 0.3, 100, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.filter = 'none';
-    ctx.restore();
+    drawGlow(ctx, width * 0.5, height * 0.5, 190, '180, 150, 255', pulse * 0.14);
+    drawGlow(ctx, width * 0.3, height * 0.3, 130, '255, 200, 150', pulse * 0.08);
 
     // Room name
     ctx.font = `400 ${Math.min(width, height) * 0.06}px Georgia, serif`;
@@ -100,14 +98,31 @@ export class StubScene implements Scene {
   }
 
   private drawExitButton(ctx: CanvasRenderingContext2D): void {
+    const assets = this.engine.getAssets();
     const { x, y, r } = this.exitButton;
+    // Soft dark backing so the button reads on busy art
     ctx.save();
-    ctx.fillStyle = 'rgba(200, 180, 255, 0.1)';
-    ctx.filter = 'blur(10px)';
+    ctx.fillStyle = 'rgba(25, 15, 40, 0.42)';
     ctx.beginPath();
     ctx.arc(x, y, r + 5, 0, Math.PI * 2);
     ctx.fill();
-    ctx.filter = 'none';
+    ctx.strokeStyle = 'rgba(230, 215, 245, 0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+    if (assets.drawFit(ctx, 'btn_home', x, y, r * 2, 0.95)) {
+      ctx.save();
+      ctx.font = '400 11px Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(230, 215, 240, 0.75)';
+      ctx.shadowColor = 'rgba(15, 8, 25, 0.8)';
+      ctx.shadowBlur = 4;
+      ctx.fillText('Home', x, y + r + 14);
+      ctx.restore();
+      return;
+    }
+    ctx.save();
+    drawGlow(ctx, x, y, r + 8, '200, 180, 255', 0.15);
 
     ctx.fillStyle = '#3a2a4a';
     ctx.beginPath();

@@ -132,6 +132,27 @@ export function rgba(r: number, g: number, b: number, a: number): string {
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
+// Soft radial glow — replaces ctx.filter='blur(...)' halos, which are slow
+// and unsupported on older iPad Safari. `rgb` is "r, g, b".
+export function drawGlow(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  rgb: string,
+  alpha: number
+): void {
+  if (alpha <= 0 || radius <= 0) return;
+  const g = ctx.createRadialGradient(x, y, 0, x, y, radius);
+  g.addColorStop(0, `rgba(${rgb}, ${alpha})`);
+  g.addColorStop(0.55, `rgba(${rgb}, ${alpha * 0.35})`);
+  g.addColorStop(1, `rgba(${rgb}, 0)`);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 // Draw a soft watercolor-style blob
 export function watercolorBlob(
   ctx: CanvasRenderingContext2D,

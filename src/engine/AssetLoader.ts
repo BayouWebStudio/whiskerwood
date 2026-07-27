@@ -1,15 +1,38 @@
 // AssetLoader — loads and caches all game images
-// Call preload() at startup, then use get() to draw images in scenes
+// Two-phase preload: CRITICAL assets (hub + kitten + UI) gate the loading
+// screen so the game starts fast; everything else streams in the background.
+// Scenes null-check get(), so late assets simply pop in.
+
+export interface CoverTransform {
+  ox: number; // x offset of the drawn image
+  oy: number;
+  dw: number; // drawn width
+  dh: number; // drawn height
+}
+
+// All generated backgrounds share this aspect — used as a fallback for
+// anchor math before an image finishes loading.
+const BG_ASPECT = 1408 / 768;
 
 export class AssetLoader {
   private images: Map<string, HTMLImageElement> = new Map();
-  private loaded = false;
+  private criticalLoaded = false;
   private loadCount = 0;
   private totalCount = 0;
-  private onProgress: ((loaded: number, total: number) => void) | null = null;
-  private onComplete: (() => void) | null = null;
 
-  // Asset registry — path -> key
+  // Assets needed before the hub can appear
+  private static CRITICAL: string[] = [
+    'hub_bg',
+    'kitten_sitting', 'kitten_walking1', 'kitten_walking2', 'kitten_happy', 'kitten_sleeping',
+    'door_greenhouse', 'door_potion_kitchen', 'door_observatory', 'door_story_library',
+    'door_music_garden', 'door_forest_trail', 'door_bedroom',
+    'lantern', 'biolum_flower_purple', 'biolum_flower_blue', 'biolum_flower_pink',
+    'animal_bunny', 'animal_bird', 'animal_squirrel', 'animal_owl',
+    'cloud_1', 'cloud_2', 'star_tiny', 'shooting_star',
+    'star_counter', 'btn_home',
+  ];
+
+  // Asset registry — key -> path
   private static ASSET_LIST: Record<string, string> = {
     // Kitten
     'kitten_sitting': 'sprites/kitten_sitting.png',
@@ -22,16 +45,15 @@ export class AssetLoader {
     'scarf_red': 'sprites/scarf_red.png',
     'glasses_round': 'sprites/glasses_round.png',
     'flower_hair': 'sprites/flower_hair.png',
-    // Backgrounds
-    'hub_bg': 'backgrounds/hub_bg.png',
-    'hub_bg_wide': 'backgrounds/hub_bg_wide.png',
-    'greenhouse_bg': 'backgrounds/greenhouse_bg.png',
-    'stub_potion_kitchen': 'backgrounds/stub_potion_kitchen.png',
-    'stub_observatory': 'backgrounds/stub_observatory.png',
-    'stub_story_library': 'backgrounds/stub_story_library.png',
-    'stub_music_garden': 'backgrounds/stub_music_garden.png',
-    'stub_forest_trail': 'backgrounds/stub_forest_trail.png',
-    'stub_bedroom': 'backgrounds/stub_bedroom.png',
+    // Backgrounds (JPEG — no alpha needed, much smaller)
+    'hub_bg': 'backgrounds/hub_bg.jpg',
+    'greenhouse_bg': 'backgrounds/greenhouse_bg.jpg',
+    'stub_potion_kitchen': 'backgrounds/stub_potion_kitchen.jpg',
+    'stub_observatory': 'backgrounds/stub_observatory.jpg',
+    'stub_story_library': 'backgrounds/stub_story_library.jpg',
+    'stub_music_garden': 'backgrounds/stub_music_garden.jpg',
+    'stub_forest_trail': 'backgrounds/stub_forest_trail.jpg',
+    'stub_bedroom': 'backgrounds/stub_bedroom.jpg',
     // Doors
     'door_greenhouse': 'doors/door_greenhouse.png',
     'door_potion_kitchen': 'doors/door_potion_kitchen.png',
@@ -109,34 +131,33 @@ export class AssetLoader {
     'star_border': 'sprites/star_border.png',
   };
 
+  // Loads critical assets, resolving when the game can start. The remaining
+  // assets keep loading in the background.
   preload(onProgress?: (loaded: number, total: number) => void, onComplete?: () => void): Promise<void> {
-    this.onProgress = onProgress ?? null;
-    this.onComplete = onComplete ?? null;
-    this.totalCount = Object.keys(AssetLoader.ASSET_LIST).length;
+    const critical = new Set(AssetLoader.CRITICAL);
+    this.totalCount = critical.size;
     this.loadCount = 0;
 
     return new Promise((resolve) => {
-      const entries = Object.entries(AssetLoader.ASSET_LIST);
-      for (const [key, path] of entries) {
+      let criticalDone = 0;
+      const finishCritical = () => {
+        criticalDone++;
+        this.loadCount = criticalDone;
+        if (onProgress) onProgress(criticalDone, this.totalCount);
+        if (criticalDone >= this.totalCount && !this.criticalLoaded) {
+          this.criticalLoaded = true;
+          if (onComplete) onComplete();
+          resolve();
+        }
+      };
+
+      for (const [key, path] of Object.entries(AssetLoader.ASSET_LIST)) {
         const img = new Image();
-        img.onload = () => {
-          this.loadCount++;
-          if (this.onProgress) this.onProgress(this.loadCount, this.totalCount);
-          if (this.loadCount >= this.totalCount) {
-            this.loaded = true;
-            if (this.onComplete) this.onComplete();
-            resolve();
-          }
-        };
+        const isCritical = critical.has(key);
+        img.onload = () => { if (isCritical) finishCritical(); };
         img.onerror = () => {
           console.warn(`Failed to load asset: ${path}`);
-          this.loadCount++;
-          if (this.onProgress) this.onProgress(this.loadCount, this.totalCount);
-          if (this.loadCount >= this.totalCount) {
-            this.loaded = true;
-            if (this.onComplete) this.onComplete();
-            resolve();
-          }
+          if (isCritical) finishCritical();
         };
         img.src = `/assets/${path}`;
         this.images.set(key, img);
@@ -151,14 +172,14 @@ export class AssetLoader {
   }
 
   isLoaded(): boolean {
-    return this.loaded;
+    return this.criticalLoaded;
   }
 
   getLoadProgress(): { loaded: number; total: number } {
     return { loaded: this.loadCount, total: this.totalCount };
   }
 
-  // Draw helper — draws image centered at (x, y) with optional scale
+  // Draw image centered at (x, y) scaled by a raw multiplier
   draw(ctx: CanvasRenderingContext2D, key: string, x: number, y: number, scale: number = 1, alpha: number = 1): boolean {
     const img = this.get(key);
     if (!img) return false;
@@ -171,31 +192,65 @@ export class AssetLoader {
     return true;
   }
 
-  // Draw helper — draws image at (x, y) top-left with optional scale
-  drawAt(ctx: CanvasRenderingContext2D, key: string, x: number, y: number, scale: number = 1, alpha: number = 1): boolean {
+  // Draw image centered at (x, y) fitted so its LARGEST dimension equals
+  // `size` CSS px. Safe against source images changing resolution.
+  drawFit(ctx: CanvasRenderingContext2D, key: string, x: number, y: number, size: number, alpha: number = 1, rotation: number = 0, flipX: boolean = false): boolean {
     const img = this.get(key);
     if (!img) return false;
-    const w = img.naturalWidth * scale;
-    const h = img.naturalHeight * scale;
+    const s = size / Math.max(img.naturalWidth, img.naturalHeight);
+    const w = img.naturalWidth * s;
+    const h = img.naturalHeight * s;
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.drawImage(img, x, y, w, h);
+    ctx.translate(x, y);
+    if (rotation !== 0) ctx.rotate(rotation);
+    if (flipX) ctx.scale(-1, 1);
+    ctx.drawImage(img, -w / 2, -h / 2, w, h);
     ctx.restore();
     return true;
+  }
+
+  // Fitted size of an image for hit-testing (matches drawFit)
+  fitSize(key: string, size: number): { w: number; h: number } {
+    const img = this.get(key);
+    if (!img) return { w: size, h: size };
+    const s = size / Math.max(img.naturalWidth, img.naturalHeight);
+    return { w: img.naturalWidth * s, h: img.naturalHeight * s };
   }
 
   // Draw background covering the full canvas
   drawBackground(ctx: CanvasRenderingContext2D, key: string, width: number, height: number, alpha: number = 1): boolean {
     const img = this.get(key);
     if (!img) return false;
+    const t = this.coverTransform(key, width, height)!;
     ctx.save();
     ctx.globalAlpha = alpha;
-    // Cover the canvas, maintaining aspect ratio
-    const scale = Math.max(width / img.naturalWidth, height / img.naturalHeight);
-    const w = img.naturalWidth * scale;
-    const h = img.naturalHeight * scale;
-    ctx.drawImage(img, (width - w) / 2, (height - h) / 2, w, h);
+    ctx.drawImage(img, t.ox, t.oy, t.dw, t.dh);
     ctx.restore();
     return true;
+  }
+
+  // The cover-fit transform used by drawBackground. Falls back to the shared
+  // generated-background aspect if the image hasn't loaded yet, so anchor
+  // positions are stable from the first frame.
+  coverTransform(key: string, width: number, height: number): CoverTransform {
+    const img = this.get(key);
+    const aspect = img ? img.naturalWidth / img.naturalHeight : BG_ASPECT;
+    // cover-fit: fill the canvas, cropping whichever axis overflows
+    const dw = aspect >= width / height ? height * aspect : width;
+    const dh = aspect >= width / height ? height : width / aspect;
+    return { ox: (width - dw) / 2, oy: (height - dh) / 2, dw, dh };
+  }
+
+  // Map a normalized point (u, v) on a cover-fit background image to screen px
+  anchor(key: string, u: number, v: number, width: number, height: number): { x: number; y: number } {
+    const t = this.coverTransform(key, width, height);
+    return { x: t.ox + u * t.dw, y: t.oy + v * t.dh };
+  }
+
+  // Inverse of anchor(): screen px -> normalized image coords
+  toImage(key: string, x: number, y: number, width: number, height: number): { u: number; v: number } {
+    const t = this.coverTransform(key, width, height);
+    return { u: (x - t.ox) / t.dw, v: (y - t.oy) / t.dh };
   }
 }

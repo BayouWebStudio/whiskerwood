@@ -17,7 +17,7 @@ export interface Particle {
   baseY: number;
 }
 
-export type ParticleType = 'firefly' | 'sparkle' | 'seed' | 'petal' | 'dust' | 'star';
+export type ParticleType = 'firefly' | 'sparkle' | 'seed' | 'petal' | 'dust' | 'star' | 'heart' | 'note' | 'puff';
 
 export class ParticleSystem {
   private particles: Particle[] = [];
@@ -119,6 +119,60 @@ export class ParticleSystem {
     }
   }
 
+  // Little hearts floating up — kitten affection
+  spawnHearts(x: number, y: number, count: number = 4): void {
+    for (let i = 0; i < count; i++) {
+      this.spawn({
+        x: x + (Math.random() - 0.5) * 30,
+        y: y + (Math.random() - 0.5) * 14,
+        vx: (Math.random() - 0.5) * 0.5,
+        vy: -0.8 - Math.random() * 0.7,
+        size: 5 + Math.random() * 4,
+        life: 1.2 + Math.random() * 0.6,
+        color: `hsla(${335 + Math.random() * 20}, 85%, ${68 + Math.random() * 10}%, 0.9)`,
+        glow: false,
+        type: 'heart',
+        wobbleSpeed: 0.06,
+      });
+    }
+  }
+
+  // Soft dust puff at the kitten's feet on landing
+  spawnDust(x: number, y: number, count: number = 5): void {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.PI + (Math.random() - 0.5) * Math.PI; // mostly sideways
+      this.spawn({
+        x: x + (Math.random() - 0.5) * 12,
+        y,
+        vx: Math.cos(angle) * (0.4 + Math.random() * 0.8) * (Math.random() < 0.5 ? -1 : 1),
+        vy: -0.1 - Math.random() * 0.25,
+        size: 3 + Math.random() * 4,
+        life: 0.45 + Math.random() * 0.25,
+        color: 'hsla(38, 30%, 82%, 0.5)',
+        glow: false,
+        type: 'puff',
+      });
+    }
+  }
+
+  // Floating music notes
+  spawnNotes(x: number, y: number, count: number = 2, hue?: number): void {
+    for (let i = 0; i < count; i++) {
+      this.spawn({
+        x: x + (Math.random() - 0.5) * 26,
+        y: y + (Math.random() - 0.5) * 10,
+        vx: (Math.random() - 0.5) * 0.6,
+        vy: -0.9 - Math.random() * 0.6,
+        size: 7 + Math.random() * 4,
+        life: 1.6 + Math.random() * 0.8,
+        color: `hsla(${hue ?? 45 + Math.random() * 260}, 80%, 75%, 0.95)`,
+        glow: false,
+        type: 'note',
+        wobbleSpeed: 0.08,
+      });
+    }
+  }
+
   spawnStars(x: number, y: number, count: number = 5): void {
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
@@ -163,6 +217,16 @@ export class ParticleSystem {
         p.wobble += p.wobbleSpeed;
         p.x += p.vx + Math.sin(p.wobble) * 0.8;
         p.y += p.vy;
+      } else if (p.type === 'heart' || p.type === 'note') {
+        p.wobble += p.wobbleSpeed;
+        p.x += p.vx + Math.sin(p.wobble * 40) * 0.4;
+        p.y += p.vy;
+        p.vy *= 0.995; // ease as they rise
+      } else if (p.type === 'puff') {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= 0.92;
+        p.size += dt * 10; // dust expands as it fades
       } else {
         p.x += p.vx;
         p.y += p.vy;
@@ -197,6 +261,43 @@ export class ParticleSystem {
       // Core
       ctx.globalAlpha = alpha;
       ctx.fillStyle = p.color;
+      if (p.type === 'heart') {
+        // Two circles + a triangle make a heart
+        const s = p.size;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(Math.sin(p.wobble * 30) * 0.2);
+        ctx.beginPath();
+        ctx.arc(-s * 0.32, -s * 0.25, s * 0.42, 0, Math.PI * 2);
+        ctx.arc(s * 0.32, -s * 0.25, s * 0.42, 0, Math.PI * 2);
+        ctx.moveTo(-s * 0.72, -s * 0.05);
+        ctx.lineTo(0, s * 0.75);
+        ctx.lineTo(s * 0.72, -s * 0.05);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        continue;
+      }
+      if (p.type === 'note') {
+        // Eighth note: head + stem + flag
+        const s = p.size;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(Math.sin(p.wobble * 25) * 0.25);
+        ctx.beginPath();
+        ctx.ellipse(0, s * 0.5, s * 0.42, s * 0.32, -0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = Math.max(1.5, s * 0.16);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(s * 0.38, s * 0.42);
+        ctx.lineTo(s * 0.38, -s * 0.6);
+        ctx.quadraticCurveTo(s * 0.9, -s * 0.45, s * 0.75, s * 0.05);
+        ctx.stroke();
+        ctx.restore();
+        continue;
+      }
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
       ctx.fill();

@@ -28,10 +28,13 @@ export class InputManager {
   }
 
   private getPos(e: PointerEvent): { x: number; y: number } {
+    // CSS pixels — the whole engine works in CSS px (the canvas backing store
+    // is DPR-scaled separately). Multiplying by canvas.width/rect.width here
+    // offset every tap by the devicePixelRatio on retina screens.
     const rect = this.canvas.getBoundingClientRect();
     return {
-      x: (e.clientX - rect.left) * (this.canvas.width / rect.width),
-      y: (e.clientY - rect.top) * (this.canvas.height / rect.height),
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
     };
   }
 

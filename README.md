@@ -2,11 +2,22 @@
 
 A cozy, magical exploration game for ages 4-5. No fail states, no timers, no ads. Just curiosity, creativity, and kindness.
 
+**Live**: https://whiskerwood.vercel.app
+
+## Playable rooms
+
+- **Hub** — a tree castle on a floating island. Your kitten roams both levels freely (main island + side platforms over the rope bridges), naps when you're away, and purrs when you pet it. Bunny, squirrel, owl and bird friends wander around; lanterns swing, glow-flowers play notes, and shooting stars can be caught for dream seeds.
+- **Greenhouse** — plant flower/mushroom/vine seeds, water them, watch them bloom into glowing plants that drop dream seeds. Plants keep growing while you're away.
+- **Music Garden** — every painted instrument has its own synthesized voice (cello, saxophone, trumpet, harp, violin, lyre), plus singing flowers, hanging bells and a boop-shroom. The bunny teaches little echo-songs — any tune you play back is celebrated. No wrong notes.
+
+Five more rooms are "still sparkling to life" (Potion Kitchen, Observatory, Story Library, Forest Trail, Bedroom).
+
 ## Tech Stack
 
 - **Vite + TypeScript** — fast builds, zero framework overhead
-- **HTML5 Canvas 2D** — custom rendering engine
-- **Web Audio API** — procedural ambient music + interaction sounds
+- **HTML5 Canvas 2D** — custom rendering engine (no framework, ~50KB JS)
+- **Web Audio API** — everything synthesized: ambient pad, chimes, instrument voices, mew/purr/chirp/hoot. No audio files.
+- **AI watercolor art** — 80 assets generated via OpenRouter (Gemini Flash Image), optimized to ~17MB
 - **Capacitor** (planned) — iOS/iPadOS native wrapper
 
 ## Getting Started
@@ -22,45 +33,33 @@ pnpm preview  # preview production build
 
 ```
 src/
-├── engine/          # Game engine core
-│   ├── GameEngine.ts      # Main loop, scene management, transitions
-│   ├── InputManager.ts    # Pointer/touch input
-│   ├── AudioManager.ts     # Web Audio synthesis (ambient + SFX)
-│   ├── ParticleSystem.ts   # Fireflies, sparkles, seeds, petals
-│   ├── TransitionOverlay.ts # Fade transitions between scenes
-│   ├── StoryboardOverlay.ts # Text narration slides
-│   ├── GameState.ts        # localStorage persistence
-│   ├── types.ts            # Scene/RenderContext interfaces
-│   └── utils.ts            # Math, easing, color helpers
+├── engine/
+│   ├── GameEngine.ts       # Main loop, scenes, transitions, global HUD (seeds + mute)
+│   ├── AssetLoader.ts      # Two-phase preload (critical-first), cover-fit anchor math
+│   ├── InputManager.ts     # Pointer/touch input (CSS px)
+│   ├── AudioManager.ts     # Web Audio synthesis (ambient, SFX, creatures, instruments)
+│   ├── ParticleSystem.ts   # Fireflies, sparkles, seeds, petals, hearts, notes, dust
+│   ├── TransitionOverlay.ts# Fade transitions
+│   ├── StoryboardOverlay.ts# Narration slides (first-visit aware)
+│   ├── GameState.ts        # Debounced localStorage persistence
+│   └── utils.ts            # Math, easing, radial-gradient glows
 ├── entities/
-│   └── Kitten.ts           # Customizable kitten character
+│   └── Kitten.ts           # Breathing, squash-and-stretch, pet/sleep/wake, dream bubbles
 ├── scenes/
-│   ├── HubScene.ts          # Tree castle hub with all room doors
-│   ├── GreenhouseScene.ts   # Playable: plant/grow/collect
-│   └── StubScene.ts         # Coming soon placeholder
-└── main.ts                 # Entry point
+│   ├── HubScene.ts         # Image-anchored doors, walkable zones, critters, shooting stars
+│   ├── GreenhouseScene.ts  # Game 1: planting & growing
+│   ├── MusicGardenScene.ts # Game 2: instruments & echo-songs
+│   └── StubScene.ts        # "Coming soon" rooms
+└── main.ts
+
+tools/
+├── generate_assets.py       # AI asset generation (OPENROUTER_API_KEY env)
+├── generate_assets_extra.py
+└── optimize_assets.py       # Mass-aware trim + downscale + JPEG backgrounds
 ```
 
-## Design Principles
+All gameplay positions are anchored in background-image space and mapped through the cover-fit transform, so scenes look right at any viewport size.
 
-- No fail states, no timers, no scores, no game over
-- Big buttons, minimal text, positive feedback only
-- Soft watercolor aesthetic, warm lighting, rounded shapes
-- Gentle storybook narration via storyboard overlays
-- Everything saves automatically (localStorage)
+## Deploy
 
-## Roadmap
-
-- [x] Hub scene with all room doors
-- [x] Greenhouse room (fully playable)
-- [x] Kitten character with accessories
-- [x] Procedural ambient audio
-- [x] Storyboard narration system
-- [ ] Potion Kitchen room
-- [ ] Observatory room
-- [ ] Story Library room
-- [ ] Music Garden room
-- [ ] Forest Trail room
-- [ ] Bedroom room
-- [ ] Capacitor iOS wrapper
-- [ ] App Store submission
+Pushes to `main` auto-deploy to Vercel.

@@ -13,6 +13,8 @@ export interface Scene {
   render(rc: RenderContext): void;
   handleTap(x: number, y: number): void;
   handleMove(x: number, y: number): void;
+  /** Recompute positions after a resize/rotate. Optional. */
+  layout?(): void;
 }
 
 export interface Vec2 {
