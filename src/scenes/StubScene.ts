@@ -51,16 +51,23 @@ export class StubScene implements Scene {
 
   render(rc: RenderContext): void {
     const { ctx, width, height } = rc;
+    const assets = this.engine.getAssets();
 
-    // Dark gradient background
-    const grad = ctx.createLinearGradient(0, 0, 0, height);
-    grad.addColorStop(0, '#1a0a2a');
-    grad.addColorStop(0.5, '#2a1a3a');
-    grad.addColorStop(1, '#1a0a2a');
-    ctx.fillStyle = grad;
+    // Try background image for this room
+    const bgKey = `stub_${this.sceneName}`;
+    if (!assets.drawBackground(ctx, bgKey, width, height)) {
+      // Fallback gradient
+      const grad = ctx.createLinearGradient(0, 0, 0, height);
+      grad.addColorStop(0, '#1a0a2a');
+      grad.addColorStop(0.5, '#2a1a3a');
+      grad.addColorStop(1, '#1a0a2a');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, width, height);
+    }
+
+    // Dark overlay so text is readable on top of background
+    ctx.fillStyle = 'rgba(15, 8, 25, 0.5)';
     ctx.fillRect(0, 0, width, height);
-
-    // Soft pulsing glow in center
     const pulse = 0.3 + Math.sin(this.time * 0.5) * 0.2;
     ctx.save();
     ctx.fillStyle = `rgba(180, 150, 255, ${pulse * 0.1})`;

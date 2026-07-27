@@ -54,7 +54,7 @@ export class GreenhouseScene implements Scene {
 
   constructor(engine: GameEngine) {
     this.engine = engine;
-    this.kitten = new Kitten(0, 0, engine.getState().kitten);
+    this.kitten = new Kitten(0, 0, engine.getState().kitten, engine);
     this.waterCan = { x: 0, y: 0, active: false, angle: 0 };
     this.exitButton = { x: 0, y: 0, r: 30 };
     this.waterButton = { x: 0, y: 0, r: 30, active: false };
@@ -206,17 +206,20 @@ export class GreenhouseScene implements Scene {
 
   render(rc: RenderContext): void {
     const { ctx, width, height } = rc;
+    const assets = this.engine.getAssets();
 
-    // Background — warm greenhouse interior
-    if (!this.bgGradient) {
-      this.bgGradient = ctx.createLinearGradient(0, 0, 0, height);
-      this.bgGradient.addColorStop(0, '#1a2a1a');
-      this.bgGradient.addColorStop(0.3, '#2a3a2a');
-      this.bgGradient.addColorStop(0.6, '#3a4a3a');
-      this.bgGradient.addColorStop(1, '#2a3a2a');
+    // Background image
+    if (!assets.drawBackground(ctx, 'greenhouse_bg', width, height)) {
+      if (!this.bgGradient) {
+        this.bgGradient = ctx.createLinearGradient(0, 0, 0, height);
+        this.bgGradient.addColorStop(0, '#1a2a1a');
+        this.bgGradient.addColorStop(0.3, '#2a3a2a');
+        this.bgGradient.addColorStop(0.6, '#3a4a3a');
+        this.bgGradient.addColorStop(1, '#2a3a2a');
+      }
+      ctx.fillStyle = this.bgGradient;
+      ctx.fillRect(0, 0, width, height);
     }
-    ctx.fillStyle = this.bgGradient;
-    ctx.fillRect(0, 0, width, height);
 
     // Glass roof beams
     ctx.strokeStyle = 'rgba(200, 220, 180, 0.1)';
@@ -329,11 +332,39 @@ export class GreenhouseScene implements Scene {
   }
 
   private drawSeedPacket(ctx: CanvasRenderingContext2D, sp: SeedPacket): void {
+    const assets = this.engine.getAssets();
     const bounceY = sp.selected ? Math.sin(sp.bounce) * 4 : 0;
     const scale = sp.selected ? 1.1 : 1;
     const x = sp.x;
     const y = sp.y + bounceY;
 
+    // Try image asset first
+    const assetKey = `seed_${sp.type}`;
+    const img = assets.get(assetKey);
+    if (img) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(scale, scale);
+      const imgScale = 60 / Math.max(img.naturalWidth, img.naturalHeight);
+      const w = img.naturalWidth * imgScale;
+      const h = img.naturalHeight * imgScale;
+      ctx.globalAlpha = sp.selected ? 1 : 0.8;
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      // Selection glow
+      if (sp.selected) {
+        ctx.globalAlpha = 0.3;
+        ctx.filter = 'blur(10px)';
+        ctx.fillStyle = '#8a7aaa';
+        ctx.beginPath();
+        ctx.arc(0, 0, 35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.filter = 'none';
+      }
+      ctx.restore();
+      return;
+    }
+
+    // Fallback: code-drawn packet
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(scale, scale);
@@ -421,10 +452,48 @@ export class GreenhouseScene implements Scene {
   }
 
   private drawPlant(ctx: CanvasRenderingContext2D, plant: PlantData, plot: SoilPlot): void {
+    const assets = this.engine.getAssets();
     const stage = plant.growthStage;
     const cx = plot.x;
     const cy = plot.y;
 
+    // Determine which stage sprite to use (1-4)
+    const stageIdx = Math.min(4, Math.max(1, Math.ceil(stage)));
+    const assetKey = `${plant.type}_stage${stageIdx}`;
+    const img = assets.get(assetKey);
+
+    if (img) {
+      // Draw plant sprite centered on plot, growing from bottom
+      const swayOffset = Math.sin(this.time * 1.5 + cx * 0.01) * 2;
+      const scale = (plot.h * 1.5) / Math.max(img.naturalWidth, img.naturalHeight);
+      const w = img.naturalWidth * scale;
+      const h = img.naturalHeight * scale;
+
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+
+      // Glow for fully grown plants
+      if (plant.glowing) {
+        ctx.save();
+        const glowColor = plant.type === 'flower' ? 'rgba(255, 200, 220, 0.2)' :
+                          plant.type === 'mushroom' ? 'rgba(255, 200, 100, 0.2)' :
+                          'rgba(120, 255, 150, 0.2)';
+        ctx.fillStyle = glowColor;
+        ctx.filter = 'blur(15px)';
+        ctx.beginPath();
+        ctx.arc(cx + swayOffset, cy - h * 0.3, 25, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.filter = 'none';
+        ctx.restore();
+      }
+
+      // Draw the plant sprite, anchored at bottom-center
+      ctx.drawImage(img, cx - w / 2 + swayOffset, cy - h, w, h);
+      ctx.restore();
+      return;
+    }
+
+    // Fallback: code-drawn plant (original procedural rendering)
     if (stage < 1) {
       // Seed/sprout
       ctx.fillStyle = '#7a5a3a';
@@ -607,18 +676,30 @@ export class GreenhouseScene implements Scene {
   }
 
   private drawExitButton(ctx: CanvasRenderingContext2D): void {
+    const assets = this.engine.getAssets();
     const { x, y, r } = this.exitButton;
-    ctx.save();
 
-    // Glow
+    // Try image asset
+    const img = assets.get('btn_home');
+    if (img) {
+      const scale = (r * 2) / Math.max(img.naturalWidth, img.naturalHeight);
+      assets.draw(ctx, 'btn_home', x, y, scale, 0.85);
+      // Label
+      ctx.font = '400 10px Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(200, 180, 220, 0.6)';
+      ctx.fillText('Home', x, y + r + 15);
+      return;
+    }
+
+    // Fallback code-drawn
+    ctx.save();
     ctx.fillStyle = 'rgba(200, 180, 255, 0.1)';
     ctx.filter = 'blur(10px)';
     ctx.beginPath();
     ctx.arc(x, y, r + 5, 0, Math.PI * 2);
     ctx.fill();
     ctx.filter = 'none';
-
-    // Button
     ctx.fillStyle = '#3a2a4a';
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -626,8 +707,6 @@ export class GreenhouseScene implements Scene {
     ctx.strokeStyle = '#6a5a7a';
     ctx.lineWidth = 2;
     ctx.stroke();
-
-    // Arrow icon
     ctx.strokeStyle = '#ccaadd';
     ctx.lineWidth = 3;
     ctx.lineCap = 'round';
@@ -639,29 +718,49 @@ export class GreenhouseScene implements Scene {
     ctx.moveTo(x - 8, y);
     ctx.lineTo(x - 3, y + 5);
     ctx.stroke();
-
-    // Label
     ctx.font = '400 10px Georgia, serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#aa9aba';
     ctx.fillText('Home', x, y + r + 15);
-
     ctx.restore();
   }
 
   private drawWaterButton(ctx: CanvasRenderingContext2D): void {
+    const assets = this.engine.getAssets();
     const { x, y, r } = this.waterButton;
-    ctx.save();
 
-    // Glow
+    // Try image asset
+    const img = assets.get('btn_water');
+    if (img) {
+      const scale = (r * 2) / Math.max(img.naturalWidth, img.naturalHeight);
+      const alpha = this.waterMode ? 1 : 0.7;
+      assets.draw(ctx, 'btn_water', x, y, scale, alpha);
+      // Active glow
+      if (this.waterMode) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(100, 200, 255, 0.2)';
+        ctx.filter = 'blur(15px)';
+        ctx.beginPath();
+        ctx.arc(x, y, r + 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.filter = 'none';
+        ctx.restore();
+      }
+      ctx.font = '400 10px Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = this.waterMode ? 'rgba(138, 202, 255, 0.9)' : 'rgba(106, 138, 170, 0.6)';
+      ctx.fillText('Water', x, y + r + 15);
+      return;
+    }
+
+    // Fallback code-drawn
+    ctx.save();
     ctx.fillStyle = this.waterMode ? 'rgba(100, 200, 255, 0.3)' : 'rgba(100, 200, 255, 0.1)';
     ctx.filter = 'blur(10px)';
     ctx.beginPath();
     ctx.arc(x, y, r + 5, 0, Math.PI * 2);
     ctx.fill();
     ctx.filter = 'none';
-
-    // Button
     ctx.fillStyle = this.waterMode ? '#2a4a6a' : '#2a3a4a';
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -669,32 +768,25 @@ export class GreenhouseScene implements Scene {
     ctx.strokeStyle = this.waterMode ? '#6aaaff' : '#4a6a8a';
     ctx.lineWidth = 2;
     ctx.stroke();
-
-    // Watering can icon
     ctx.fillStyle = '#8acaff';
     ctx.beginPath();
     ctx.roundRect(x - 10, y - 8, 16, 12, 2);
     ctx.fill();
-    // Spout
     ctx.beginPath();
     ctx.moveTo(x + 6, y - 5);
     ctx.lineTo(x + 12, y - 10);
     ctx.lineTo(x + 12, y - 8);
     ctx.lineTo(x + 6, y - 3);
     ctx.fill();
-    // Handle
     ctx.strokeStyle = '#8acaff';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(x - 2, y - 10, 5, Math.PI, 0);
     ctx.stroke();
-
-    // Label
     ctx.font = '400 10px Georgia, serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = this.waterMode ? '#8acaff' : '#6a8aaa';
     ctx.fillText('Water', x, y + r + 15);
-
     ctx.restore();
   }
 

@@ -9,6 +9,7 @@ import { StubScene } from '../scenes/StubScene';
 import { TransitionOverlay } from './TransitionOverlay';
 import { StoryboardOverlay } from './StoryboardOverlay';
 import { GameState } from './GameState';
+import { AssetLoader } from './AssetLoader';
 
 export type SceneName = 'hub' | 'greenhouse' | 'potion-kitchen' | 'observatory' | 'story-library' | 'music-garden' | 'forest-trail' | 'bedroom';
 
@@ -21,6 +22,7 @@ export class GameEngine {
   private transitions: TransitionOverlay;
   private storyboard: StoryboardOverlay;
   private state: GameState;
+  private assets: AssetLoader;
 
   private scenes: Map<SceneName, Scene> = new Map();
   private currentScene: Scene | null = null;
@@ -45,6 +47,7 @@ export class GameEngine {
     this.transitions = new TransitionOverlay();
     this.storyboard = new StoryboardOverlay();
     this.state = new GameState();
+    this.assets = new AssetLoader();
 
     this.setupCanvas();
     this.setupInput();
@@ -89,6 +92,7 @@ export class GameEngine {
   getParticles(): ParticleSystem { return this.particles; }
   getState(): GameState { return this.state; }
   getStoryboard(): StoryboardOverlay { return this.storyboard; }
+  getAssets(): AssetLoader { return this.assets; }
   getWidth(): number { return this.cssWidth; }
   getHeight(): number { return this.cssHeight; }
 
@@ -152,6 +156,22 @@ export class GameEngine {
     this.running = true;
     this.lastTime = performance.now();
 
+    // Start loading assets — show loading screen until done
+    this.assets.preload(
+      (loaded, total) => {
+        // Progress callback
+      },
+      () => {
+        // All assets loaded — start the game
+        this.beginGame();
+      }
+    );
+
+    // Start render loop immediately (shows loading screen)
+    this.loop();
+  }
+
+  private beginGame(): void {
     // Start at hub
     const hub = this.scenes.get('hub')!;
     this.currentScene = hub;
@@ -166,8 +186,6 @@ export class GameEngine {
     ], () => {
       // Storyboard done, game is interactive
     });
-
-    this.loop();
   }
 
   private loop = (): void => {
@@ -212,6 +230,12 @@ export class GameEngine {
     this.ctx.fillStyle = '#1a1028';
     this.ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
 
+    // Show loading screen if assets aren't loaded yet
+    if (!this.assets.isLoaded()) {
+      this.renderLoadingScreen();
+      return;
+    }
+
     if (this.currentScene) {
       this.currentScene.render(rc);
     }
@@ -224,6 +248,58 @@ export class GameEngine {
 
     // Transition overlay on very top
     this.transitions.render(this.ctx, this.cssWidth, this.cssHeight);
+  }
+
+  private renderLoadingScreen(): void {
+    const { ctx, width: w, height: h } = { ctx: this.ctx, width: this.cssWidth, height: this.cssHeight };
+    const progress = this.assets.getLoadProgress();
+    const pct = progress.total > 0 ? progress.loaded / progress.total : 0;
+
+    // Background
+    ctx.fillStyle = '#1a1028';
+    ctx.fillRect(0, 0, w, h);
+
+    // Soft glowing circles
+    const t = performance.now() / 1000;
+    ctx.save();
+    ctx.globalAlpha = 0.15;
+    ctx.filter = 'blur(40px)';
+    ctx.fillStyle = `hsl(${280 + Math.sin(t * 0.5) * 20}, 50%, 40%)`;
+    ctx.beginPath();
+    ctx.arc(w * 0.35, h * 0.4, 120, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `hsl(${320 + Math.sin(t * 0.3) * 20}, 50%, 40%)`;
+    ctx.beginPath();
+    ctx.arc(w * 0.65, h * 0.6, 100, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.filter = 'none';
+    ctx.restore();
+
+    // Title
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `400 ${Math.min(w, h) * 0.05}px Georgia, serif`;
+    ctx.fillStyle = 'rgba(255, 245, 230, 0.9)';
+    ctx.fillText('Whiskerwood', w / 2, h / 2 - 30);
+
+    // Progress bar
+    const barW = Math.min(w * 0.5, 300);
+    const barH = 6;
+    const barX = (w - barW) / 2;
+    const barY = h / 2 + 20;
+    ctx.fillStyle = 'rgba(255, 245, 230, 0.15)';
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW, barH, 3);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(200, 180, 255, 0.8)';
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW * pct, barH, 3);
+    ctx.fill();
+
+    // Loading text
+    ctx.font = `300 ${Math.min(w, h) * 0.02}px Georgia, serif`;
+    ctx.fillStyle = 'rgba(255, 245, 230, 0.4)';
+    ctx.fillText(`Loading magic... ${progress.loaded}/${progress.total}`, w / 2, h / 2 + 50);
   }
 
   stop(): void {
